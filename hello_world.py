@@ -9,7 +9,8 @@ accepted_road_types = [
     "trunk",
     "primary",
     "secondary",
-    #"tertiary",
+    "tertiary",
+    "residential"
     #"unclassified"
 ]
 
@@ -28,13 +29,13 @@ class node():
         self.streets = streets
 
     @staticmethod
-    def fromId(id):
+    def fromId(id, streets):
         node_element = next((child for child in root if (child.tag == "node" and child.attrib["id"] == id)), None)
         return node(
             node_element.attrib["lon"],
             node_element.attrib["lat"],
             id,
-            []
+            streets
         )
 
 class way():
@@ -76,12 +77,35 @@ root = tree.getroot()
 ways = [way.fromElement(element) for element in root if element.tag == "way" and find(element, "highway") in accepted_road_types]
 intersections = []
 
-for currentWay in ways:
+#make graph
+
+for i in range(0, len(ways)):
+    currentWay = ways[i]
     for currentNode in currentWay.nodes:
-        for otherWay in ways:
+        for j in range(0, i):
+            otherWay = ways[j]
             for otherNode in otherWay.nodes:
                 if otherNode == currentNode:
-                    intersections.append(node.fromId(currentNode))
+                    intersection = next((intersection for intersection in intersections if (intersection.id == currentNode)), None)
+                    if intersection is None:
+                        intersections.append(node.fromId(currentNode, [currentWay, otherWay]))
+                    else:
+                        if currentWay not in intersection.streets:
+                            intersection.streets.append(currentWay) # old way would be there already anyway
 
+
+#cut ways apart
 for intersection in intersections:
-    print(intersection.longitude, intersection.latitude)
+    if len(intersection.streets) > 2:
+        print(intersection.latitude, intersection.longitude)
+        for street in intersection.streets:
+            print(street.name)
+    """
+    for street in intersection.streets:
+        index = street.nodes.index(intersection.id)
+        if index == 0:
+            continue
+        if index == len(intersection.streets):
+            continue
+        print(intersection.latitude, intersection.longitude)
+    """
