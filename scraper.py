@@ -1,15 +1,21 @@
 
 #import geopy
 import xml.etree.ElementTree as ET
+import json
 
 # constants
+
+LON0 = 0
+LON1 = 1
+LAT0 = 0
+LAT1 = 1
 
 accepted_road_types = [
     "motorway",
     "trunk",
     "primary",
     "secondary",
-    "tertiary",
+    "tertiabry",
     "residential"
     #"unclassified"
 ]
@@ -96,16 +102,21 @@ for i in range(0, len(ways)):
 
 #cut ways apart
 for intersection in intersections:
-    if len(intersection.streets) > 2:
-        print(intersection.latitude, intersection.longitude)
-        for street in intersection.streets:
-            print(street.name)
-    """
+    new_streets = []
     for street in intersection.streets:
         index = street.nodes.index(intersection.id)
         if index == 0:
+            new_streets.append(street)
             continue
         if index == len(intersection.streets):
+            new_streets.append(street)
             continue
-        print(intersection.latitude, intersection.longitude)
-    """
+        first_part = way(street.name, street.nodes[:index])
+        second_part = way(street.name, street.nodes[index:])
+        new_streets.append(first_part)
+        new_streets.append(second_part)
+
+for intersection in intersections:
+    print(intersection.latitude, intersection.longitude)
+    for street in intersection.streets:
+        print(street.name)
