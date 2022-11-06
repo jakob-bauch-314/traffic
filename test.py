@@ -1,18 +1,53 @@
 
-import xml.etree.ElementTree as ET
-import json
+import pygame
+import math
+import random
 
-tree = ET.parse('map.osm')
-root = tree.getroot()
+class edge():
+    def __init__(self, content):
+        self.content = content
 
-class way():
-    def __init__(self, name, nodes):
-        self.name = name
+class node():
+    def __init__(self, edges, content):
+        self.edges = edges
+        self.content = content
+
+class tree():
+    def __init__(self, nodes):
         self.nodes = nodes
 
-    @staticmethod
-    def fromElement(element):
-        return way(
-            next((child.attrib["v"] for child in element if (child.tag == "tag" and child.attrib["k"] == "name")), None),
-            [node.attrib["ref"] for node in element if node.tag == "nd"]
-        )
+
+class vehicle():
+    def __init__(self, position, length, start, path):
+        self.positon = position
+        self.length = length
+        self.start = start
+        self.path = path
+
+    def draw(self):
+        pass
+
+    def update(self):
+        pass
+
+class street():
+
+    def __init__(self, startx, starty, endx, endy):
+        self.startx = startx
+        self.starty = starty
+        self.endx = endx
+        self.endy = endy
+        self.length = math.sqrt(math.pow(endx - startx, 2) + math.pow(endy - starty, 2))
+
+    def draw(self):
+        pass
+
+class crossing():
+
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+    def draw(self):
+        pass
+
