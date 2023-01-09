@@ -43,19 +43,23 @@ def spawn_vehicle(crossing):
 def update_vehicle(time):
     pass
 
-def translate(x, y):
-    return (x * unit_size + shift_x, y * unit_size + shift_y)
+def translate(x, y, x_offset=0, y_offset=0):
+    return (int(x * unit_size + shift_x) + x_offset, int(y * unit_size + shift_y) + y_offset)
 
 def draw_scene():
     for crossing in crossings:
-        pygame.draw.circle(WIN, (0, 0, 255), translate(crossing.x, crossing.y), 7)
+        pygame.draw.circle(WIN, (255, 255, 255), translate(crossing.x, crossing.y), 4)
 
     for street in streets:
+        # unit vector of street, rotated by 90 degrees for street offset
+        x_offset = 4 *  (crossings[street.end].y - crossings[street.start].y) / street.length
+        y_offset = 4 *  -(crossings[street.end].x - crossings[street.start].x) / street.length
+
         pygame.draw.line(
-            WIN, (255, 0, 0),
-            translate(crossings[street.start].x, crossings[street.start].y),
-            translate(crossings[street.end].x, crossings[street.end].y),
-            5
+            WIN, (255, 255, 255),
+            translate(crossings[street.start].x, crossings[street.start].y, x_offset, y_offset),
+            translate(crossings[street.end].x, crossings[street.end].y, x_offset, y_offset),
+            4
         )
 
     for vehicle in vehicles:
@@ -63,20 +67,19 @@ def draw_scene():
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-crossings = [
-    Crossing(-1, 0, 7),
-    Crossing(0, 1, 0),
-    Crossing(0, -1, 0),
-    Crossing(1, 0, 0)
-]
+crossings_amount = 50
 
-streets = [
-    Street(0, 1, 1, .5),
-    Street(0, 2, 1, .5),
-    Street(1, 2, 1, .5),
-    Street(1, 3, 1, .5),
-    Street(2, 3, 1, 1)
-]
+crossings = []
+for _ in range(0, crossings_amount):
+    crossings.append(Crossing((random.random()*WIDTH - shift_x)/unit_size, (random.random()*HEIGHT - shift_y)/unit_size, 0.0))
+
+streets = []
+for i in range(0, crossings_amount):
+    # all possible streets sorted by length
+    all_streets = sorted(list(map(lambda j: Street(i, j, math.sqrt(math.pow(crossings[j].x - crossings[i].x, 2) + math.pow(crossings[j].y - crossings[i].y, 2)), 1), range(0, crossings_amount))), key = lambda street: street.length)
+    # add to streets
+    streets += all_streets[1:4]
+
 
 vehicles = []
 
