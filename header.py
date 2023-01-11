@@ -1,5 +1,6 @@
 
 import pygame
+import math
 
 class Empty:
     pass
@@ -18,23 +19,37 @@ def dict_to_object(dictionary, object_class):
 
 
 class Crossing(Empty):
-    def __init__(self, x, y, spawn_rate=0):
+    def __init__(self, x, y):
         self.x = x
         self.y = y
-        spawn_rate = spawn_rate
+
 
 
 class Street(Empty):
-    def __init__(self, start, end, length=1, choose_rate=0):
+    def __init__(self, start, end, nodes):
         self.start = start
         self.end = end
-        self.length = length
-        self.choose_rate = choose_rate
+        self.nodes = nodes
+
+        self.lengt = sum([
+            math.sqrt(math.pow(nodes[i + 1][0] - nodes[i][0], 2) + math.pow(nodes[i + 1][1] - nodes[i][1], 2))
+            for i in range(0, len(nodes) - 1)
+        ])
+
+class Road_end(Empty):
+    def __init__(self, crossing):
+        self.crossing = crossing
+
+class Traffic_light(Empty):
+    def __init__(self, crossing):
+        self.crossing = crossing
 
 class Map:
-    def __init__(self, crossings, streets, min_x, min_y, max_x, max_y):
+    def __init__(self, crossings, streets, road_ends, traffic_lights, min_x, min_y, max_x, max_y):
         self.crossings = crossings
         self.streets = streets
+        self.road_ends = road_ends
+        self.traffic_lights = traffic_lights
         self.min_x = min_x
         self.min_y = min_y
         self.max_x = max_x
@@ -44,6 +59,8 @@ class Map:
         return {
             "crossings": [object_to_dict(crossing) for crossing in self.crossings],
             "streets": [object_to_dict(street) for street in self.streets],
+            "road_ends": [object_to_dict(road_end) for road_end in self.road_ends],
+            "traffic_lights": [object_to_dict(traffic_light) for traffic_light in self.traffic_lights],
             "min_x": self.min_x, "min_y": self.min_y, "max_x": self.max_x, "max_y": self.max_y
         }
 
@@ -52,6 +69,8 @@ class Map:
         return Map(
             [dict_to_object(crossing, Crossing) for crossing in dictionary["crossings"]],
             [dict_to_object(street, Street) for street in dictionary["streets"]],
+            [dict_to_object(road_end, Road_end) for road_end in dictionary["road_ends"]],
+            [dict_to_object(traffic_light, Traffic_light) for traffic_light in dictionary["traffic_lights"]],
             dictionary["min_x"],
             dictionary["min_y"],
             dictionary["max_x"],
