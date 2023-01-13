@@ -39,14 +39,11 @@ class Street(Empty):
 
         self.length = length
 
-class Vehicle:
-    def __init__(self, path, length):
-        self.path = path
-        self.length = length
-
 class StreetStart():
     def __init__(self, street):
         self.street = street
+        self.cool_down = 0
+        self.T = 30
 
 class StreetEnd():
     def __init__(self, street):
@@ -56,7 +53,7 @@ class TrafficLight():
     pass
 
 class Map:
-    def __init__(self, junctions, streets, street_ends, street_starts, traffic_lights, min_x, min_y, max_x, max_y):
+    def __init__(self, junctions, streets, street_starts, street_ends, traffic_lights, min_x, min_y, max_x, max_y):
         self.junctions = junctions
         self.streets = streets
         self.street_ends = street_ends

@@ -7,7 +7,7 @@ import header
 
 PPM = .25  #pixels per meter
 TPS = 5  #ticks per second
-PLAYBACK_SPEED = 50
+PLAYBACK_SPEED = 10
 BACKGROUND_COLOR = (255, 255, 255)
 
 STREET_WIDTH = 3
@@ -25,14 +25,19 @@ JUNCTION_COLOR = (150, 150, 150)
 
 VEHICLE_RADIUS = 3
 VEHICLE_COLOR = (0, 0, 0)
-VEHICLE_SPEED = 16.666
+VEHICLE_SPEED = 16.7
 
 # unpacking data ---------------------------------------------
 
 with open('map.json', 'r') as f:
     MAP = header.Map.from_dict(json.load(f))
+
 junctions = MAP.junctions
 streets = MAP.streets
+street_starts = MAP.street_starts
+street_ends = MAP.street_ends
+traffic_lights = MAP.traffic_lights
+
 vehicles = []
 min_x = MAP.min_x
 min_y = MAP.min_y
@@ -46,6 +51,18 @@ WIN = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("traffic sim")
 
 # functions -----------------------------------
+
+class Vehicle:
+    def __init__(self, path, length):
+        self.path = path
+        self.length = length
+    def street_and_position_in_street(self):
+        sum = 0
+        for i in self.path:
+            street = streets[i]
+            sum += street.length
+            if sum >= self.length:
+                return i, self.length - (sum - street.length)
 
 def translate_x(x): # translates meters to pixels
     return ((.75 * x) - min_x) * PPM
@@ -88,7 +105,7 @@ def draw():
                 translate_x(junction.x),
                 translate_y(junction.y)
             ), JUNCTION_RADIUS)
-        """
+    """
     for street_end in MAP.street_ends:
 
         street = streets[street_end.street]
@@ -133,17 +150,18 @@ def draw():
 
         # calculate position of vehicle
 
-        street, position_in_street = vehicle.street_and_position_in_street()
+        idx, position_in_street = vehicle.street_and_position_in_street()
+        street = streets[idx]
         i = 0
         for i in range(0, len(street.nodes)):
-            if street.lengths[i] > vehicle.length - position_in_street:
+            if street.lengths[i] > position_in_street:
                 i -= 1
                 break
         x1, y1 = street.nodes[i]
         x2, y2 = street.nodes[i + 1]
         d = 0
         if (street.lengths[i + 1] - street.lengths[i]) != 0:
-            d = (vehicle.length - position_in_street - street.lengths[i])/(street.lengths[i+1] - street.lengths[i])
+            d = (position_in_street - street.lengths[i])/(street.lengths[i+1] - street.lengths[i])
         x = (1-d) * x1 + d * x2
         y = (1-d) * y1 + d * y2
 
@@ -163,10 +181,38 @@ def update(time):
     destroyed_vehicle_indices = []
     for i, vehicle in enumerate(vehicles):
         vehicle.length += VEHICLE_SPEED * time
-        if (vehicle.length >= sum([street.length for street in vehicle.path])):
+        if vehicle.length >= sum([streets[street].length for street in vehicle.path]):
             destroyed_vehicle_indices.append(i)
     for i in sorted(destroyed_vehicle_indices, reverse=True):
         del vehicles[i]
+
+    for street_start in street_starts:
+        if (street_start.cool_down <= 0):
+            street_start.cool_down = street_start.T
+
+            street = street_start.street
+            path = []
+            drive = True
+            while drive:
+
+                path.append(street)
+                if street in [street_end.street for street_end in street_ends]:
+                    drive = False
+
+                options = []
+                for junction in junctions:
+                    if street in junction.incoming_streets:
+                        options = junction.outgoing_streets
+                        break
+
+                if len(options) == 0:
+                    drive = False
+                else:
+                    street = random.choice(options)
+
+            vehicles.append(Vehicle(path, 0))
+        else:
+            street_start.cool_down -= time
 
 # game loop -----------------------
 

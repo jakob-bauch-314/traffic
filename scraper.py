@@ -32,11 +32,11 @@ def get_attribute(element, attribute):
     return next((child.attrib["v"] for child in element if (child.tag == "tag" and child.attrib["k"] == attribute)), None)
 
 # download osm file --------------------------------------------------
-
+"""
 print("downloading osm file ...")
 url = f"https://api.openstreetmap.org/api/0.6/map?bbox={MIN_LON},{MIN_LAT},{MAX_LON},{MAX_LAT}"
 urllib.request.urlretrieve(url, "map.osm")
-
+"""
 # create map structure -------------------------------------------------:
 
 tree = ET.parse('map.osm')
@@ -57,18 +57,25 @@ split_ways = []
 for i, way in enumerate(ways):
     nodes, directions = way
     size = len(nodes)
-    indices = [idx for idx, node in enumerate(nodes) if any(node in way[0] for j, way in enumerate(ways) if i != j)]
-    split_ways += [(nodes[i:j+1], directions) for i, j in zip([0] + indices, indices + [size]) if j > i]
+
+    indices = [
+        idx
+        for idx, node in list(enumerate(nodes))[1:-1]
+        if any([node in way[0] for j, way in enumerate(ways) if i != j])
+    ]
+
+    split_ways += [(nodes[i:j+1], directions) for i, j in zip([0] + indices, indices + [size])]
+
 ways = split_ways
+
 
 # join ways
 
 joined_ways = []
-connected_ways_indices = []
 connections_but_not_junctions = []
-connection_ids = list(set(way[0][-1] for way in split_ways).union(set(way[0][0] for way in ways)))
+connection_ids = list(set(way[0][-1] for way in ways).union(set(way[0][0] for way in ways)))
 
-for (i, connection_id) in enumerate(connection_ids):
+for i, connection_id in enumerate(connection_ids):
     connected_ways =\
         [
             (i, True) for i, way in enumerate(ways) if way[0][-1] == connection_id
@@ -79,28 +86,32 @@ for (i, connection_id) in enumerate(connection_ids):
     if len(connected_ways) != 2:
         continue
 
-    directions_A = sorted([(dir == connected_ways[0][1]) for dir in ways[connected_ways[0][0]][1]])
-    directions_B = sorted([(dir == connected_ways[1][1]) for dir in ways[connected_ways[1][0]][1]])
+    way_A = connected_ways[0]
+    way_B = connected_ways[1]
+
+    directions_A = sorted([(dir == way_A[1]) for dir in ways[way_A[0]][1]])
+    directions_B = sorted([(dir == way_B[1]) for dir in ways[way_B[0]][1]])
 
     if directions_A != directions_B:
         continue
 
-    A = split_ways[connected_ways[0][0]][0]\
-        if connected_ways[0][1]\
-        else list(reversed(ways[connected_ways[0][0]][0]))
-    B = split_ways[connected_ways[1][0]][0]\
-        if connected_ways[0][1]\
-        else list(reversed(ways[connected_ways[1][0]][0]))
+    A = ways[way_A[0]][0]\
+        if way_A[1]\
+        else list(reversed(ways[way_A[0]][0]))
+    B = ways[way_B[0]][0]\
+        if not way_B[1]\
+        else list(reversed(ways[way_B[0]][0]))
 
-    connected_ways_indices.append(connected_ways[0][0])
-    connected_ways_indices.append(connected_ways[1][0])
     connections_but_not_junctions.append(i)
-    joined_ways.append((A + B, directions_A))
 
+    for idx in sorted((connected_ways[0][0], connected_ways[1][0]), reverse=True):     # remove ways that are added together
+        del ways[idx]
 
-ways = joined_ways + [way for i, way in enumerate(ways) if i not in connected_ways_indices]
+    ways.append((A + B[1:], directions_A))
+
 junction_ids = [id for i, id in enumerate(connection_ids) if i not in connections_but_not_junctions]
 
+junction_ids = list(set(way[0][-1] for way in ways).union(set(way[0][0] for way in ways)))
 
 # find junctions
 
@@ -141,9 +152,8 @@ for junction_id in junction_ids:
     for (i, street) in ends:
         if len([start for start in starts if start[1][0] != street[0]]) == 0:
             street_ends.append(header.StreetStart(i))
-    print()
 
-    junctions.append(header.Junction(x, y, [start[0] for start in starts], [end[0] for end in ends], list(connections)))
+    junctions.append(header.Junction(x, y, [end[0] for end in ends], [start[0] for start in starts], list(connections)))
 
 with open('map.json', 'w') as f:
     json.dump(header.Map(
