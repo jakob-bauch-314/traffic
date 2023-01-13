@@ -16,148 +16,148 @@ MAX_LAT = 48.7469
 MID_LON = (MAX_LON + MIN_LON)/2
 MID_LAT = (MAX_LAT + MIN_LAT)/2
 
-ROAD_TYPES = [
-    "motorway", "motorway_link",
-    "trunk", "trunk_link",
-    "primary", "primary_link",
-    "secondary", "secondary_link",
-    "tertiary", "tertiary_link",
-    #"residential", "unclassified"
-]
+ROAD_TYPES = ["secondary"]
 
-def y(lat):
+def y_from_lat(lat):
     return (lat - MID_LAT) / VOLLKREIS * ERDUMFANG
 
-def x(lon):
+def x_from_lon(lon):
     return (lon - MID_LON) / VOLLKREIS * ERDUMFANG * math.cos(MID_LAT / VOLLKREIS * 2 * math.pi)
 
+def x_y_from_id(id):
+    element = next((child for child in root if (child.tag == "node" and child.attrib["id"] == id)), None)
+    return x_from_lon(float(element.attrib["lon"])), y_from_lat(float(element.attrib["lat"]))
+
+def get_attribute(element, attribute):
+    return next((child.attrib["v"] for child in element if (child.tag == "tag" and child.attrib["k"] == attribute)), None)
+
 # download osm file --------------------------------------------------
-"""
+
 print("downloading osm file ...")
 url = f"https://api.openstreetmap.org/api/0.6/map?bbox={MIN_LON},{MIN_LAT},{MAX_LON},{MAX_LAT}"
 urllib.request.urlretrieve(url, "map.osm")
-"""
+
 # create map structure -------------------------------------------------:
 
 tree = ET.parse('map.osm')
 root = tree.getroot()
 
-ways = [header.Way.from_element(way) for way in root if way.tag == "way" and header.get_attribute(way, "highway") in ROAD_TYPES]
+ways = [
+    (
+        [node.attrib["ref"] for node in way if node.tag == "nd"],
+        [True] if get_attribute(way, "oneway") == "yes" or get_attribute(way, "junction") == "roundabout"
+        else [True, False]
+    )
+    for way in root if way.tag == "way" and (get_attribute(way, "highway") in ROAD_TYPES)
+]
 
-
-print("joining ways")
-#join ways together
-for i, way_i in enumerate(ways):
-
-    if way_i is None:
-        continue
-
-    end_end = []
-    end_start = []
-    start_end = []
-    start_start = []
-
-    for j, way_j in enumerate(ways):
-        if i == j or way_j is None:
-            continue
-        if way_i.end() == way_j.end():
-            end_end.append(j)
-        if way_i.end() == way_j.start():
-            end_start.append(j)
-        if way_i.start() == way_j.end():
-            start_end.append(j)
-        if way_i.start() == way_j.start():
-            start_start.append(j)
-
-    found = False
-    if len(end_end) == 1 and len(end_start) == 0:
-        found = True
-        way_i = way_i.slice(0, len(way_i.nodes)-1) - ways[end_end[0]]
-        ways[end_end[0]] = None
-    if len(end_start) == 1 and len(end_end) == 0:
-        found = True
-        way_i = way_i.slice(0, len(way_i.nodes)-1) + ways[end_start[0]]
-        ways[end_start[0]] = None
-    if len(start_end) == 1 and len(start_start) == 0:
-        found = True
-        way_i = ways[start_end[0]] + way_i.slice(1, len(way_i.nodes))
-        ways[start_end[0]] = None
-    if len(start_start) == 1 and len(start_end) == 0:
-        found = True
-        way_i = -ways[start_start[0]] + way_i.slice(1, len(way_i.nodes))
-        ways[start_start[0]] = None
-
-    if found:
-        ways[i] = None
-        ways.append(way_i)
-
-ways = [way for way in ways if way is not None]
-
-#split ways apart
-print("splitting ways")
+# split ways apart
 
 split_ways = []
-for i, way_i in enumerate(ways):
-    start = 0
-    end = len(way_i.nodes) - 1
-
-
-    for end, node in list(enumerate(way_i.nodes))[1:-1]:
-        for j, way_j in enumerate(ways):
-            if (i == j):
-                continue
-            if way_i.nodes[end] in way_j.nodes:  # Verbesserung? (gleich merken)
-                pass
-                split_ways.append(way_i.slice(start, end + 1))
-                end = start
-
-    split_ways.append(way_i.slice(start, len(way_i.nodes)))
+for i, way in enumerate(ways):
+    nodes, directions = way
+    size = len(nodes)
+    indices = [idx for idx, node in enumerate(nodes) if any(node in way[0] for j, way in enumerate(ways) if i != j)]
+    split_ways += [(nodes[i:j+1], directions) for i, j in zip([0] + indices, indices + [size]) if j > i]
 ways = split_ways
 
-crossing_ids = []
-crossings = []
-streets = []
-road_ends = []
+# join ways
+
+joined_ways = []
+connected_ways_indices = []
+connections_but_not_junctions = []
+connection_ids = list(set(way[0][-1] for way in split_ways).union(set(way[0][0] for way in ways)))
+
+for (i, connection_id) in enumerate(connection_ids):
+    connected_ways =\
+        [
+            (i, True) for i, way in enumerate(ways) if way[0][-1] == connection_id
+        ] + [
+            (i, False) for i, way in enumerate(ways) if way[0][0] == connection_id
+        ]
+
+    if len(connected_ways) != 2:
+        continue
+
+    directions_A = sorted([(dir == connected_ways[0][1]) for dir in ways[connected_ways[0][0]][1]])
+    directions_B = sorted([(dir == connected_ways[1][1]) for dir in ways[connected_ways[1][0]][1]])
+
+    if directions_A != directions_B:
+        continue
+
+    A = split_ways[connected_ways[0][0]][0]\
+        if connected_ways[0][1]\
+        else list(reversed(ways[connected_ways[0][0]][0]))
+    B = split_ways[connected_ways[1][0]][0]\
+        if connected_ways[0][1]\
+        else list(reversed(ways[connected_ways[1][0]][0]))
+
+    connected_ways_indices.append(connected_ways[0][0])
+    connected_ways_indices.append(connected_ways[1][0])
+    connections_but_not_junctions.append(i)
+    joined_ways.append((A + B, directions_A))
+
+
+ways = joined_ways + [way for i, way in enumerate(ways) if i not in connected_ways_indices]
+junction_ids = [id for i, id in enumerate(connection_ids) if i not in connections_but_not_junctions]
+
+
+# find junctions
+
+ways = \
+    [
+        [(way[0] if dir else list(reversed(way[0]))) for dir in way[1]]
+        for way in ways
+    ]
+
+ways = [
+    (i, lane) for i, way in enumerate(ways) for lane in way
+]
+
+streets = [header.Street([x_y_from_id(id) for id in way[1]]) for way in ways]
+
+junctions = []
+street_starts = []
+street_ends = []
 traffic_lights = []
+for junction_id in junction_ids:
 
-print("creating json ...")
-for way in ways:
+    starts = [(i, way) for i, way in enumerate(ways) if way[1][0] == junction_id]
+    ends = [(i, way) for i, way in enumerate(ways) if way[1][-1] == junction_id]
 
-    try:
-        start = crossing_ids.index(way.start())
-    except:
-        start = len(crossing_ids)
-        crossing_ids.append(way.start())
-        node = next((child for child in root if (child.tag == "node" and child.attrib["id"] == way.start())), None)
-        crossings.append(header.Crossing(x(float(node.attrib["lon"])), y(float(node.attrib["lat"]))))
+    connections = set()
 
-    try:
-        end = crossing_ids.index(way.end())
-    except:
-        end = len(crossing_ids)
-        crossing_ids.append(way.end())
-        node = next((child for child in root if (child.tag == "node" and child.attrib["id"] == way.end())), None)
-        crossings.append(header.Crossing(x(float(node.attrib["lon"])), y(float(node.attrib["lat"]))))
+    for i, start in enumerate(starts):
+        for j, end in enumerate(ends):
+            if start[1] != end[1]:
+                connections.add((i, j))
 
-    nodes = []
-    for id in way.nodes:
-        node = next((child for child in root if (child.tag == "node" and child.attrib["id"] == id)), None)
-        nodes.append((x(float(node.attrib["lon"])), y(float(node.attrib["lat"]))))
+    x, y = x_y_from_id(junction_id)
 
-    streets.append(header.Street(start, end, nodes))
-    if not way.oneway:
-        streets.append(header.Street(end, start, list(reversed(nodes))))
+    for (i, street) in starts:
+        if len([end for end in ends if end[1][0] != street[0]]) == 0:
+            street_starts.append(header.StreetStart(i))
 
-for i, crossing_ids in enumerate(crossing_ids):
-    node = next((child for child in root if (child.tag == "node" and child.attrib["id"] == id)), None)
-    print(header.get_attribute(node, "crossing"))
+    for (i, street) in ends:
+        if len([start for start in starts if start[1][0] != street[0]]) == 0:
+            street_ends.append(header.StreetStart(i))
+    print()
 
-map = header.Map(crossings, streets, road_ends, traffic_lights,
-    x(MIN_LON),
-    y(MIN_LAT),
-    x(MAX_LON),
-    y(MAX_LAT)
-)
+    junctions.append(header.Junction(x, y, [start[0] for start in starts], [end[0] for end in ends], list(connections)))
 
 with open('map.json', 'w') as f:
-    json.dump(map.to_dict(), f)
+    json.dump(header.Map(
+        junctions,
+        streets,
+        street_starts,
+        street_ends,
+        traffic_lights,
+        x_from_lon(MIN_LON),
+        y_from_lat(MIN_LAT),
+        x_from_lon(MAX_LON),
+        y_from_lat(MAX_LAT)
+    ).to_dict(), f)
+
+print("done")
+
+import simulation
