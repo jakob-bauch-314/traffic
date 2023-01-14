@@ -6,8 +6,8 @@ import json
 import header
 
 PPM = .25  #pixels per meter
-TPS = 5  #ticks per second
-PLAYBACK_SPEED = 10
+TPS = 1  #ticks per second
+PLAYBACK_SPEED = 20
 BACKGROUND_COLOR = (255, 255, 255)
 
 STREET_WIDTH = 3
@@ -23,7 +23,7 @@ STREET_START_COLOR = (0, 0, 255)
 JUNCTION_RADIUS = 4
 JUNCTION_COLOR = (150, 150, 150)
 
-VEHICLE_RADIUS = 3
+VEHICLE_RADIUS = 2
 VEHICLE_COLOR = (0, 0, 0)
 VEHICLE_SPEED = 16.7
 
@@ -58,11 +58,13 @@ class Vehicle:
         self.length = length
     def street_and_position_in_street(self):
         sum = 0
+        i = 0
         for i in self.path:
             street = streets[i]
             sum += street.length
             if sum >= self.length:
-                return i, self.length - (sum - street.length)
+                break
+        return i, self.length - (sum - street.length)
 
 def translate_x(x): # translates meters to pixels
     return ((.75 * x) - min_x) * PPM
@@ -180,9 +182,29 @@ def update(time):
 
     destroyed_vehicle_indices = []
     for i, vehicle in enumerate(vehicles):
-        vehicle.length += VEHICLE_SPEED * time
+
+        street, position_in_street = vehicle.street_and_position_in_street()
+
+        min_dist = \
+            min([d for d in [
+                    pair[1] - position_in_street for pair in [
+                            other_vehicle.street_and_position_in_street() for other_vehicle in vehicles]
+                    if pair[0] == street]
+             if d > 0], default=999)
+
+        vehicle.length += VEHICLE_SPEED * time * (2 * math.atan(min_dist/1) / math.pi)
+
+
+        for j, other_vehicle in enumerate(vehicles):
+            if i == j:
+                continue
+            other_street, other_position_in_street = other_vehicle.street_and_position_in_street()
+            if street == other_street:
+                d = position_in_street - other_position_in_street
+
         if vehicle.length >= sum([streets[street].length for street in vehicle.path]):
             destroyed_vehicle_indices.append(i)
+
     for i in sorted(destroyed_vehicle_indices, reverse=True):
         del vehicles[i]
 
@@ -201,9 +223,12 @@ def update(time):
 
                 options = []
                 for junction in junctions:
-                    if street in junction.incoming_streets:
-                        options = junction.outgoing_streets
+                    try:
+                        i = junction.incoming_streets.index(street)
+                        options = [street for j, street in enumerate(junction.outgoing_streets) if junction.connections[i][j]]
                         break
+                    except ValueError:
+                        pass
 
                 if len(options) == 0:
                     drive = False

@@ -72,7 +72,6 @@ ways = split_ways
 # join ways
 
 joined_ways = []
-connections_but_not_junctions = []
 connection_ids = list(set(way[0][-1] for way in ways).union(set(way[0][0] for way in ways)))
 
 for i, connection_id in enumerate(connection_ids):
@@ -102,14 +101,10 @@ for i, connection_id in enumerate(connection_ids):
         if not way_B[1]\
         else list(reversed(ways[way_B[0]][0]))
 
-    connections_but_not_junctions.append(i)
-
     for idx in sorted((connected_ways[0][0], connected_ways[1][0]), reverse=True):     # remove ways that are added together
         del ways[idx]
 
     ways.append((A + B[1:], directions_A))
-
-junction_ids = [id for i, id in enumerate(connection_ids) if i not in connections_but_not_junctions]
 
 junction_ids = list(set(way[0][-1] for way in ways).union(set(way[0][0] for way in ways)))
 
@@ -136,12 +131,13 @@ for junction_id in junction_ids:
     starts = [(i, way) for i, way in enumerate(ways) if way[1][0] == junction_id]
     ends = [(i, way) for i, way in enumerate(ways) if way[1][-1] == junction_id]
 
-    connections = set()
+    connections = []
 
-    for i, start in enumerate(starts):
-        for j, end in enumerate(ends):
-            if start[1] != end[1]:
-                connections.add((i, j))
+    for i, start in enumerate(ends):
+        row = []
+        for j, end in enumerate(starts):
+            row.append(start[1][0] != end[1][0])
+        connections.append(row)
 
     x, y = x_y_from_id(junction_id)
 

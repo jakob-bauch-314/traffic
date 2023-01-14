@@ -43,7 +43,7 @@ class StreetStart():
     def __init__(self, street):
         self.street = street
         self.cool_down = 0
-        self.T = 30
+        self.T = 3
 
 class StreetEnd():
     def __init__(self, street):
