@@ -156,7 +156,7 @@ class StreetStart(Object, header.StreetStart):
                 else:
                     street = random.choice(options)
 
-            vehicles.append(Vehicle(path, 0))
+            vehicles.append(Vehicle(path))
         else:
             self.cool_down -= time
 
@@ -219,73 +219,51 @@ class TrafficLight(Object, header.TrafficLight):
 
 
 class Vehicle:
-    def __init__(self, path, length):
+    def __init__(self, path):
         self.path = path
-        self.length = length
         self.street = 0
-        self.position_in_street = 0
-
-    def street_and_position_in_street(self):
-        sum = 0
-        i = 0
-        for i in self.path:
-            street = streets[i]
-            sum += street.length
-            if sum >= self.length:
-                break
-        return i, self.length - (sum - street.length)
+        self.position = 0
 
     def draw(self):
-        idx, position_in_street = self.street_and_position_in_street()
-        street = streets[idx]
+
+        street = streets[self.path[self.street]]
+
         i = 0
         for i in range(0, len(street.nodes)):
-            if street.lengths[i] > position_in_street:
-                i -= 1
+            if street.lengths[i] > self.position:
                 break
-        x1, y1 = street.nodes[i]
-        x2, y2 = street.nodes[i + 1]
-        d = 0
-        if (street.lengths[i + 1] - street.lengths[i]) != 0:
-            d = (position_in_street - street.lengths[i])/(street.lengths[i+1] - street.lengths[i])
-        x = (1-d) * x1 + d * x2
-        y = (1-d) * y1 + d * y2
+        i -= 1
 
-        x_start, y_start = street.nodes[i]
-        x_end, y_end = street.nodes[i + 1]
-        abs = street.lengths[i + 1] - street.lengths[i]
+        l = street.lengths[i + 1] - street.lengths[i]
 
-        if abs != 0:
-            x_offset = LANE_DISTANCE * (y_end - y_start) / abs
-            y_offset = LANE_DISTANCE * (x_end - x_start) / abs
-
+        if l!= 0:
+            x1, y1 = street.nodes[i]
+            x2, y2 = street.nodes[i + 1]
+            d = (self.position - street.lengths[i])/l
+            x = (1-d) * x1 + d * x2
+            y = (1-d) * y1 + d * y2
+            x_offset = LANE_DISTANCE * (y2 - y1) / l
+            y_offset = LANE_DISTANCE * (x2 - x1) / l
             pygame.draw.circle(WIN, VEHICLE_COLOR, (translate_x(x) + x_offset, translate_y(y) + y_offset), VEHICLE_RADIUS)
+
 
     def update(self, time):
 
-        street, position_in_street = self.street_and_position_in_street()
-        try:
-            traffic_light = traffic_lights[[traffic_light.junction for traffic_light in traffic_lights].index(next(i for i, junction in enumerate(junctions) if street in junction.incoming_streets))]
-        except:
-            pass
         min_dist = \
             min([d for d in [
-                pair[1] - position_in_street for pair in [
-                    other_vehicle.street_and_position_in_street() for other_vehicle in vehicles]
-                if pair[0] == street]
+                pair[1] - self.position for pair in [
+                    (other_vehicle.street, other_vehicle.position) for other_vehicle in vehicles]
+                if pair[0] == self.street]
                  if 0 < d < D_MAX], default=D_MAX)
 
-        self.length += (min_dist / T_MAX) * time
-
-        return self.length >= sum([streets[street].length for street in self.path])
-
-def dict_to_object(dictionary, object_class):
-    empty_object = Object()
-    for key in dictionary:
-        setattr(empty_object, key, dictionary[key])
-    empty_object.__class__ = object_class
-    return empty_object
-
+        self.position += (min_dist / T_MAX) * time
+        street_length = streets[self.path[self.street]].length
+        if self.position > street_length:
+            self.position -= street_length
+            self.street += 1
+        if self.street >= len(self.path):
+            return True
+        return False
 
 class Map(header.Map):
     def __init__(self, junctions, streets, street_starts, street_ends, traffic_lights, min_x, min_y, max_x, max_y, vehicles):
