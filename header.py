@@ -2,23 +2,10 @@
 import pygame
 import math
 
-class Empty:
-    pass
-
-
 def object_to_dict(object):
     return dict((key, value) for (key, value) in object.__dict__.items())
 
-
-def dict_to_object(dictionary, object_class):
-    empty_object = Empty()
-    for key in dictionary:
-        setattr(empty_object, key, dictionary[key])
-    empty_object.__class__ = object_class
-    return empty_object
-
-
-class Junction(Empty):
+class Junction:
     def __init__(self, x, y, incoming_streets, outgoing_streets, connections):
         self.x = x
         self.y = y
@@ -27,7 +14,7 @@ class Junction(Empty):
         self.connections = connections
 
 
-class Street(Empty):
+class Street:
     def __init__(self, nodes):
 
         self.lengths = [0]
@@ -39,18 +26,21 @@ class Street(Empty):
 
         self.length = length
 
-class StreetStart():
-    def __init__(self, street):
-        self.street = street
-        self.cool_down = 0
-        self.T = 3
 
-class StreetEnd():
+class StreetStart:
     def __init__(self, street):
         self.street = street
 
-class TrafficLight():
-    pass
+class StreetEnd:
+    def __init__(self, street):
+        self.street = street
+
+
+class TrafficLight:
+    def __init__(self, junction, inc_n, out_n):
+        self.junction = junction
+        self.inc_n = inc_n # number of incoming streets
+        self.out_n = out_n # number of outgoing streets
 
 class Map:
     def __init__(self, junctions, streets, street_starts, street_ends, traffic_lights, min_x, min_y, max_x, max_y):

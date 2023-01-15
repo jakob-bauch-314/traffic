@@ -8,10 +8,10 @@ import header
 ERDUMFANG = 40000000
 VOLLKREIS = 360
 
-MIN_LON = 11.1552
-MIN_LAT = 48.7153
-MAX_LON = 11.2104
-MAX_LAT = 48.7469
+MIN_LON = 11.1641
+MIN_LAT = 48.7228
+MAX_LON = 11.1981
+MAX_LAT = 48.7446
 
 MID_LON = (MAX_LON + MIN_LON)/2
 MID_LAT = (MAX_LAT + MIN_LAT)/2
@@ -69,12 +69,47 @@ for i, way in enumerate(ways):
 ways = split_ways
 
 
-# join ways
-
 joined_ways = []
 connection_ids = list(set(way[0][-1] for way in ways).union(set(way[0][0] for way in ways)))
 
+# find traffic light ids
+traffic_light_ids = []
+for junction_id in connection_ids:
+
+    traffic_signal = False
+
+    """
+    lights = 0
+    starts = [way for way in ways if way[0][0] == junction_id]
+    for start in starts:
+        node = next((child for child in root if (child.tag == "node" and child.attrib["id"] == start[0][1])), None)
+        if get_attribute(node, "highway") == "traffic_signals" and get_attribute(node, "traffic_signals:direction") == "backward":
+            lights += 1
+
+    ends = [way for way in ways if way[0][-1] == junction_id]
+    for end in ends:
+        node = next((child for child in root if (child.tag == "node" and child.attrib["id"] == end[0][-2])), None)
+        if get_attribute(node, "highway") == "traffic_signals" and get_attribute(node, "traffic_signals:direction") == "forward":
+            lights += 1
+
+    if lights > 1:
+        traffic_signal = True
+    
+    """
+    node = next((child for child in root if (child.tag == "node" and child.attrib["id"] == junction_id)), None)
+    if get_attribute(node, "highway") == "traffic_signals" and get_attribute(node, "traffic_signals:direction") is None:
+        traffic_signal = True
+    if traffic_signal:
+        traffic_light_ids.append(junction_id)
+
+print(traffic_light_ids)
+
+# join ways
 for i, connection_id in enumerate(connection_ids):
+
+    if connection_id in traffic_light_ids:
+        continue
+
     connected_ways =\
         [
             (i, True) for i, way in enumerate(ways) if way[0][-1] == connection_id
@@ -106,9 +141,9 @@ for i, connection_id in enumerate(connection_ids):
 
     ways.append((A + B[1:], directions_A))
 
-junction_ids = list(set(way[0][-1] for way in ways).union(set(way[0][0] for way in ways)))
+# slice ways
 
-# find junctions
+junction_ids = list(set(way[0][-1] for way in ways).union(set(way[0][0] for way in ways)))
 
 ways = \
     [
@@ -120,37 +155,34 @@ ways = [
     (i, lane) for i, way in enumerate(ways) for lane in way
 ]
 
+# streets
 streets = [header.Street([x_y_from_id(id) for id in way[1]]) for way in ways]
 
+# junctions, starts and ends
 junctions = []
 street_starts = []
 street_ends = []
-traffic_lights = []
 for junction_id in junction_ids:
 
     starts = [(i, way) for i, way in enumerate(ways) if way[1][0] == junction_id]
     ends = [(i, way) for i, way in enumerate(ways) if way[1][-1] == junction_id]
 
-    connections = []
-
-    for i, start in enumerate(ends):
-        row = []
-        for j, end in enumerate(starts):
-            row.append(start[1][0] != end[1][0])
-        connections.append(row)
-
     x, y = x_y_from_id(junction_id)
 
-    for (i, street) in starts:
-        if len([end for end in ends if end[1][0] != street[0]]) == 0:
-            street_starts.append(header.StreetStart(i))
+    street_starts += [header.StreetStart(i) for i, street in starts if len([end for end in ends if end[1][0] != street[0]]) == 0]
+    street_ends += [header.StreetEnd(i) for i, street in ends if len([start for start in starts if start[1][0] != street[0]]) == 0]
 
-    for (i, street) in ends:
-        if len([start for start in starts if start[1][0] != street[0]]) == 0:
-            street_ends.append(header.StreetStart(i))
-
+    connections = [[start[1][0] != end[1][0] for j, end in enumerate(starts)] for i, start in enumerate(ends)]
     junctions.append(header.Junction(x, y, [end[0] for end in ends], [start[0] for start in starts], list(connections)))
 
+# traffic lights
+traffic_lights = []
+for traffic_light_id in traffic_light_ids:
+    junction_inx = junction_ids.index(traffic_light_id)
+    junction = junctions[junction_inx]
+    traffic_lights.append(header.TrafficLight(junction_inx, len(junction.incoming_streets), len(junction.outgoing_streets)))
+
+# dump data
 with open('map.json', 'w') as f:
     json.dump(header.Map(
         junctions,
@@ -163,7 +195,5 @@ with open('map.json', 'w') as f:
         x_from_lon(MAX_LON),
         y_from_lat(MAX_LAT)
     ).to_dict(), f)
-
-print("done")
 
 import simulation
