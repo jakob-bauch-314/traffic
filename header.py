@@ -6,41 +6,48 @@ def object_to_dict(object):
     return dict((key, value) for (key, value) in object.__dict__.items())
 
 class Junction:
-    def __init__(self, x, y, incoming_streets, outgoing_streets, connections):
+    def __init__(self, x, y, incs, outs, connections, traffic_lights):
         self.x = x
         self.y = y
-        self.incoming_streets = incoming_streets
-        self.outgoing_streets = outgoing_streets
+        self.incs = incs
+        self.outs = outs
         self.connections = connections
+        self.traffic_lights = traffic_lights
 
 
 class Street:
-    def __init__(self, nodes):
+    def __init__(self, nodes, start_junction_idx, out_idx, end_junction_idx, inc_idx):
 
         self.lengths = [0]
         length = 0
         for i in range(0, len(nodes) - 1):
             length += math.sqrt(math.pow(nodes[i + 1][0] - nodes[i][0], 2) + math.pow(nodes[i + 1][1] - nodes[i][1], 2))
             self.lengths.append(length)
-        self.nodes = nodes
-
         self.length = length
+        self.start_junction_idx = start_junction_idx
+        self.out_idx = out_idx
+        self.end_junction_idx = end_junction_idx
+        self.inc_idx = inc_idx
+
+        self.nodes = nodes
 
 
 class StreetStart:
-    def __init__(self, street):
-        self.street = street
+    def __init__(self, street_idx):
+        self.street_idx = street_idx
 
 class StreetEnd:
-    def __init__(self, street):
-        self.street = street
+    def __init__(self, street_idx):
+        self.street_idx = street_idx
 
 
 class TrafficLight:
-    def __init__(self, junction, inc_n, out_n):
-        self.junction = junction
-        self.inc_n = inc_n # number of incoming streets
-        self.out_n = out_n # number of outgoing streets
+    def __init__(self, junction_idx, phases, durations, phase_idx, time):
+        self.junction_idx = junction_idx
+        self.phases = phases
+        self.durations = durations
+        self.phase_idx = phase_idx
+        self.time = time
 
 class Map:
     def __init__(self, junctions, streets, street_starts, street_ends, traffic_lights, min_x, min_y, max_x, max_y):
@@ -63,17 +70,3 @@ class Map:
             "traffic_lights": [object_to_dict(traffic_light) for traffic_light in self.traffic_lights],
             "min_x": self.min_x, "min_y": self.min_y, "max_x": self.max_x, "max_y": self.max_y
         }
-
-    @staticmethod
-    def from_dict(dictionary):
-        return Map(
-            [dict_to_object(junction, Junction) for junction in dictionary["junctions"]],
-            [dict_to_object(street, Street) for street in dictionary["streets"]],
-            [dict_to_object(street_start, StreetStart) for street_start in dictionary["street_starts"]],
-            [dict_to_object(street_end, StreetEnd) for street_end in dictionary["street_ends"]],
-            [dict_to_object(traffic_light, TrafficLight) for traffic_light in dictionary["traffic_lights"]],
-            dictionary["min_x"],
-            dictionary["min_y"],
-            dictionary["max_x"],
-            dictionary["max_y"]
-        )

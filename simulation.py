@@ -4,11 +4,18 @@ import math
 import random
 import json
 import header
+import os
 
-PPM = .25  #pixels per meter
-TPS = 12  #ticks per second
-PLAYBACK_SPEED = 5
+# constants - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+PPM = 1  #pixels per meter
+TPS = 5  #ticks per second
+PLAYBACK_SPEED = 100
 BACKGROUND_COLOR = (255, 255, 255)
+V_MAX = 13.88
+D_MAX = 23
+D_MIN = 6.6
+SPAWN_TIME = 6
 
 STREET_WIDTH = 3
 LANE_DISTANCE = 2
@@ -32,23 +39,20 @@ VEHICLE_COLOR = (0, 0, 0)
 DRAW_VEHICLES = True
 
 TRAFFIC_LIGHT_RADIUS = 4
-TRAFFIC_LIGHT_COLOR = (0, 100, 255)
+TRAFFIC_LIGHT_COLOR = (70, 130, 180)
 DRAW_TRAFFIC_LIGHTS = True
 
-V_MAX = 16.7
-D_MAX = 50
-T_MAX = D_MAX / V_MAX
-SPAWN_TIME = 5
+RUNTIME = 3600
 
 # functions -----------------------------------
 
 
 def translate_x(x): # translates meters to pixels
-    return ((x) - min_x) * PPM
+    return ((.5 * x) - min_x) * PPM
 
 
 def translate_y(y):
-    return (-(y) - min_y) * PPM
+    return (-(.5 * y) - min_y) * PPM
 
 
 class Object:
@@ -56,8 +60,8 @@ class Object:
 
 
 class Junction(Object, header.Junction):
-    def __init__(self, x, y, incoming_streets, outgoing_streets, connections):
-        super().__init__(x, y, incoming_streets, outgoing_streets, connections)
+    def __init__(self, x, y, incs, outs, connections, traffic_lights):
+        super().__init__(x, y, incs, outs, connections, traffic_lights)
     def draw(self):
         pygame.draw.circle(
             WIN, JUNCTION_COLOR,
@@ -68,12 +72,12 @@ class Junction(Object, header.Junction):
 
     @staticmethod
     def from_dict(dic):
-        return Junction(dic["x"], dic["y"], dic["incoming_streets"], dic["outgoing_streets"], dic["connections"])
+        return Junction(dic["x"], dic["y"], dic["incs"], dic["outs"], dic["connections"], dic["traffic_lights"])
 
 
 class Street(Object, header.Street):
-    def __init__(self, nodes):
-        super().__init__(nodes)
+    def __init__(self, nodes, start_junction, start_id, end_junction, end_id):
+        super().__init__(nodes, start_junction, start_id, end_junction, end_id)
 
     def draw(self):
         for i in range(0, len(self.nodes) - 1):
@@ -101,17 +105,17 @@ class Street(Object, header.Street):
 
     @staticmethod
     def from_dict(dic):
-        return Street(dic["nodes"])
+        return Street(dic["nodes"], dic["start_junction_idx"], dic["out_idx"], dic["end_junction_idx"], dic["inc_idx"])
 
 
 class StreetStart(Object, header.StreetStart):
     def __init__(self, street):
         super().__init__(street)
         self.cool_down = 0
-        self.T = 10
+        self.T = SPAWN_TIME
 
     def draw(self):
-        street = streets[self.street]
+        street = streets[self.street_idx]
         x, y = street.nodes[0]
 
         x_start, y_start = x, y
@@ -129,40 +133,32 @@ class StreetStart(Object, header.StreetStart):
                     translate_y(y) + y_offset
                 ), STREET_START_RADIUS)
 
-    def update(self, time):
+    def update(self, dt):
         if (self.cool_down <= 0):
             self.cool_down = self.T
 
-            street = self.street
+            # generate vehicle path
+            street_idx = self.street_idx
             path = []
             drive = True
             while drive:
-
-                path.append(street)
-                if street in [street_end.street for street_end in street_ends]:
-                    drive = False
-
-                options = []
-                for junction in junctions:
-                    try:
-                        i = junction.incoming_streets.index(street)
-                        options = [street for j, street in enumerate(junction.outgoing_streets) if junction.connections[i][j]]
-                        break
-                    except ValueError:
-                        pass
-
+                path.append(street_idx)
+                junction = junctions[streets[street_idx].end_junction_idx]
+                i = streets[street_idx].inc_idx
+                options = [street for j, street in enumerate(junction.outs) if junction.connections[i][j]]
                 if len(options) == 0:
                     drive = False
                 else:
-                    street = random.choice(options)
+                    street_idx = random.choice(options)
 
+            # create new vehicle
             vehicles.append(Vehicle(path))
         else:
-            self.cool_down -= time
+            self.cool_down -= dt
 
     @staticmethod
     def from_dict(dic):
-        return StreetStart(dic["street"])
+        return StreetStart(dic["street_idx"])
 
 
 class StreetEnd(Object, header.StreetEnd):
@@ -170,7 +166,7 @@ class StreetEnd(Object, header.StreetEnd):
         super().__init__(street)
 
     def draw(self):
-        street = streets[self.street]
+        street = streets[self.street_idx]
         x, y = street.nodes[-1]
 
         x_start, y_start = x, y
@@ -190,56 +186,52 @@ class StreetEnd(Object, header.StreetEnd):
 
     @staticmethod
     def from_dict(dic):
-        return StreetEnd(dic["street"])
+        return StreetEnd(dic["street_idx"])
 
 
 class TrafficLight(Object, header.TrafficLight):
-    def __init__(self, junction, inc_n, out_n):
-        super().__init__(junction, inc_n, out_n)
-        self.phases = [[[i == k for i in range(0, self.inc_n)] for j in range(0, self.out_n)] for k in range(0, self.inc_n)]
-        self.durations = [60 for k in range(0, self.inc_n)]
-        self.phase = 0
-        self.time = 0
+    def __init__(self, junction, phases, durations, phase_idx, time):
+        super().__init__(junction, phases, durations, phase_idx, time)
+        #self.phases = [[[inc_idx == phase_idx for out_idx in range(0, self.out_n)] for inc_idx in range(0, self.inc_n)] for phase_idx in range(0, self.inc_n)]
+        #self.durations = [PHASE_TIME for phase_idx in range(0, self.inc_n)]
 
     def draw(self):
-        pygame.draw.circle(WIN, TRAFFIC_LIGHT_COLOR, (translate_x(junctions[self.junction].x), translate_y(junctions[self.junction].y)), TRAFFIC_LIGHT_RADIUS)
+        pygame.draw.circle(WIN, TRAFFIC_LIGHT_COLOR, (translate_x(junctions[self.junction_idx].x), translate_y(junctions[self.junction_idx].y)), TRAFFIC_LIGHT_RADIUS)
 
-    def update(self, time):
-        self.time += time
-        duration = self.durations[self.phase]
+    def update(self, dt):
+        self.time += dt
+        duration = self.durations[self.phase_idx]
         if self.time > duration:
             self.time -= duration
-            self.phase += 1
-            if self.phase >= len(self.phases):
-                self.phase = 0
+            self.phase_idx += 1
+            if self.phase_idx >= len(self.phases):
+                self.phase_idx = 0
 
     @staticmethod
     def from_dict(dic):
-        return TrafficLight(dic["junction"], dic["inc_n"], dic["out_n"])
+        return TrafficLight(dic["junction_idx"], dic["phases"], dic["durations"], dic["phase_idx"], dic["time"])
 
 
 class Vehicle:
     def __init__(self, path):
         self.path = path
-        self.street = 0
-        self.position = 0
+        self.path_idx = 0
+        self.pos = 0
 
     def draw(self):
 
-        street = streets[self.path[self.street]]
-
+        street = streets[self.path[self.path_idx]]
         i = 0
         for i in range(0, len(street.nodes)):
-            if street.lengths[i] > self.position:
+            if street.lengths[i] > self.pos:
                 break
         i -= 1
-
         l = street.lengths[i + 1] - street.lengths[i]
 
         if l!= 0:
             x1, y1 = street.nodes[i]
             x2, y2 = street.nodes[i + 1]
-            d = (self.position - street.lengths[i])/l
+            d = (self.pos - street.lengths[i])/l
             x = (1-d) * x1 + d * x2
             y = (1-d) * y1 + d * y2
             x_offset = LANE_DISTANCE * (y2 - y1) / l
@@ -247,22 +239,38 @@ class Vehicle:
             pygame.draw.circle(WIN, VEHICLE_COLOR, (translate_x(x) + x_offset, translate_y(y) + y_offset), VEHICLE_RADIUS)
 
 
-    def update(self, time):
+    def update(self, dt):
 
-        min_dist = \
-            min([d for d in [
-                pair[1] - self.position for pair in [
-                    (other_vehicle.street, other_vehicle.position) for other_vehicle in vehicles]
-                if pair[0] == self.street]
-                 if 0 < d < D_MAX], default=D_MAX)
+        street_idx = self.path[self.path_idx]
+        street = streets[street_idx]
 
-        self.position += (min_dist / T_MAX) * time
-        street_length = streets[self.path[self.street]].length
-        if self.position > street_length:
-            self.position -= street_length
-            self.street += 1
-        if self.street >= len(self.path):
-            return True
+        d = min(
+            [d for d in
+             [other.pos - self.pos for other in vehicles if other.path[other.path_idx] == street_idx and other != self]
+             if 0 < d < D_MAX],
+            default=D_MAX)
+
+        red_light = False
+        if self.path_idx < len(self.path) - 1:
+            next_street_idx = self.path[self.path_idx + 1]
+            next_street = streets[next_street_idx]
+            for traffic_light_idx in junctions[street.end_junction_idx].traffic_lights:
+                traffic_light = traffic_lights[traffic_light_idx]
+                if not traffic_light.phases[traffic_light.phase_idx][street.inc_idx][next_street.out_idx]:
+                    red_light = True
+
+        if red_light:
+            d = min(d, street.length - self.pos)
+
+        self.pos += dt * (d - D_MIN) * (V_MAX / (D_MAX - D_MIN))
+
+        street_length = streets[self.path[self.path_idx]].length
+        if self.pos > street_length:
+            self.pos -= street_length
+            self.path_idx += 1
+            if self.path_idx >= len(self.path):
+                self.path_idx -= 1
+                return True
         return False
 
 class Map(header.Map):
@@ -312,21 +320,32 @@ def draw():
         for traffic_light in traffic_lights:
             traffic_light.draw()
 
+def update(dt):
 
-def update(time):
+    global vehicle_sum
+    global time_step_sum
+    global street_lengths
+    global time
+    global run
+
+    time += dt
+    time_step_sum += 1
+    if (time > RUNTIME):
+        run = False
+    vehicle_sum += len(vehicles)
 
     destroyed_vehicle_indices = []
     for i, vehicle in enumerate(vehicles):
-        if vehicle.update(time):
+        if vehicle.update(dt):
             destroyed_vehicle_indices.append(i)
     for i in sorted(destroyed_vehicle_indices, reverse=True):
         del vehicles[i]
 
     for street_start in street_starts:
-        street_start.update(time)
+        street_start.update(dt)
 
     for traffic_light in traffic_lights:
-        traffic_light.update(time)
+        traffic_light.update(dt)
 
 # unpacking data ---------------------
 
@@ -345,11 +364,18 @@ min_y = map.min_y
 max_x = map.max_x
 max_y = map.max_y
 
+vehicle_sum = 0
+time_step_sum = 0
+street_lengths = sum(street.length for street in streets)
+time = 0
+
 WIDTH = (map.max_x - map.min_x) * PPM
 HEIGHT = (map.max_y - map.min_y) * PPM
 
 WIN = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("traffic sim")
+pygame.display.set_caption("traffic simumation")
+
+# adjust traffic lights --------------------------------------------
 
 # game loop -----------------------
 
@@ -368,3 +394,5 @@ while run:
     pygame.display.update()
 
 pygame.quit()
+
+print(1000 * (vehicle_sum / time_step_sum) / street_lengths)

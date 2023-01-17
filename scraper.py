@@ -7,16 +7,59 @@ import header
 ERDUMFANG = 40000000
 VOLLKREIS = 360
 
-MIN_LON = 11.1641
-MIN_LAT = 48.7228
-MAX_LON = 11.1981
-MAX_LAT = 48.7446
+MIN_LON = 11.1730
+MIN_LAT = 48.7322
+MAX_LON = 11.1836
+MAX_LAT = 48.7368
 
 MID_LON = (MAX_LON + MIN_LON) / 2
 MID_LAT = (MAX_LAT + MIN_LAT) / 2
 
-ROAD_TYPES = ["secondary"]
-TRAFFIC_LIGHT_IDS = ["35108427", "35108418", "187118378", "186969402", "186969348"]
+ROAD_TYPES = ["secondary", "tertiary"]
+TRAFFIC_LIGHTS = {
+    "35108427" : (
+        [
+            {
+                ("Münchener Straße", "Theresienstraße"),
+                ("Münchener Straße", "Luitpoldstraße")
+            }, {
+                ("Luitpoldstraße", "Theresienstraße"),
+                ("Luitpoldstraße", "Münchener Straße"),
+                ("Münchener Straße", "Luitpoldstraße")
+            },
+            {},
+            {
+                ("Luitpoldstraße", "Theresienstraße"),
+                ("Theresienstraße", "Luitpoldstraße"),
+                ("Theresienstraße", "Münchener Straße"),
+            }
+        ],
+        [13, 20, 25, 20],
+        6,
+        0
+    ),
+    "186969402" : (
+        [
+            {
+                ("Donauwörther Straße", "Theresienstraße"),
+                ("Donauwörther Straße", "Bahnhofstraße"),
+                ("Theresienstraße", "Donauwörther Straße"),
+                ("Theresienstraße", "Bahnhofstraße"),
+                ("Fünfzehnerstraße", "Theresienstraße")
+            },{
+                ("Fünfzehnerstraße", "Donauwörther Straße"),
+                ("Fünfzehnerstraße", "Theresienstraße")
+            }
+        ],
+        [23, 55],
+        0,
+        0
+    )
+    #"35108418",
+    #"187118378",
+    #"186969348
+}
+
 
 def y_from_lat(lat):
     return (lat - MID_LAT) / VOLLKREIS * ERDUMFANG
@@ -37,10 +80,10 @@ def get_attribute(element, attribute):
 
 
 # download osm file --------------------------------------------------
-"""
+
 url = f"https://api.openstreetmap.org/api/0.6/map?bbox={MIN_LON},{MIN_LAT},{MAX_LON},{MAX_LAT}"
 urllib.request.urlretrieve(url, "map.osm")
-"""
+
 # create map structure -------------------------------------------------:
 
 tree = ET.parse('map.osm')
@@ -74,18 +117,18 @@ roads = split_roads
 
 # join roads - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-connection_ids = list(set(way[0][-1] for way in roads).union(set(way[0][0] for way in roads)))
+connection_ids = list(set(nodes[-1] for nodes, dirs in roads).union(set(nodes[0] for nodes, dirs in roads)))
 
 for i, connection_id in enumerate(connection_ids):
 
-    if connection_id in TRAFFIC_LIGHT_IDS:
+    if connection_id in TRAFFIC_LIGHTS.keys():
         continue
 
     connected_roads = \
         [
-            (i, True) for i, way in enumerate(roads) if way[0][-1] == connection_id
+            (i, True) for i, (nodes, dirs) in enumerate(roads) if nodes[-1] == connection_id
         ] + [
-            (i, False) for i, way in enumerate(roads) if way[0][0] == connection_id
+            (i, False) for i, (nodes, dirs) in enumerate(roads) if nodes[0] == connection_id
         ]
 
     if len(connected_roads) != 2:
@@ -186,14 +229,39 @@ for junction_id in junction_ids:
 # traffic lights - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 traffic_lights = []
-for traffic_light_idx, traffic_light_id in enumerate(TRAFFIC_LIGHT_IDS):
+for traffic_light_idx, traffic_light_id in enumerate(TRAFFIC_LIGHTS.keys()):
     junction_inx = junction_ids.index(traffic_light_id)
     junction = junctions[junction_inx]
     junction.traffic_lights.append(traffic_light_idx)
 
     traffic_lights.append(
-        header.TrafficLight(junction_inx, len(junction.incs), len(junction.outs))
+        header.TrafficLight(junction_inx, [], [], 0, 0)
     )
+
+# inserting taffic lights - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+street_list = [
+    (get_attribute(way, "name"), [node.attrib["ref"] for node in way if node.tag == "nd"])
+    for way in root if way.tag == "way" and (get_attribute(way, "highway") in ROAD_TYPES)
+]
+
+for traffic_light in traffic_lights:
+
+    junction_idx = traffic_light.junction_idx
+    junction = junctions[junction_idx]
+    phases, durations, phase_idx, time = TRAFFIC_LIGHTS[junction_ids[traffic_light.junction_idx]]
+
+    incs = [next(name for name, nodes in street_list if indexed_lanes[inc_idx][1][-2] in nodes) for inc_idx in junction.incs]
+    outs = [next(name for name, nodes in street_list if indexed_lanes[inc_idx][1][-2] in nodes) for inc_idx in junction.outs]
+
+    traffic_light.phases = [
+        [[(inc, out) in phase for out in outs] for inc in incs]
+        for phase in phases
+    ]
+
+    traffic_light.durations = durations
+    traffic_light.phase_idx = phase_idx
+    traffic_light.time = time
 
 # dump data - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
