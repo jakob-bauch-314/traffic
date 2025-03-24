@@ -20,3 +20,6 @@ This project consists of three core components:
    ```bash
    git clone https://github.com/your-username/traffic-simulation.git
    cd traffic-simulation
+2. **Install dependencies**:
+   ```bash
+   pip install pygame
